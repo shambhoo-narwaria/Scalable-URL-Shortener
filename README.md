@@ -118,13 +118,7 @@ mvn spring-boot:run
 ```
 API is now running at: `http://localhost:8080`
 
-### 3. Test the Application (Terminal 2)
-Open a new terminal window to run the automated test suite, which creates a short URL, tests the redirect, and verifies the analytics:
-```powershell
-.\test-server.ps1
-```
-
-### 4. Stop Everything Cleanly
+### 3. Stop Everything Cleanly
 When you are entirely finished, run this script to kill the Spring Boot server and stop the Docker containers:
 ```powershell
 .\stop-server.ps1
