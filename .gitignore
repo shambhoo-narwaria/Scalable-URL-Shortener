@@ -1,0 +1,34 @@
+# Project metadata
+target/
+*.class
+*.jar
+*.war
+*.ear
+
+# Maven
+.mvn/
+mvn.cmd
+
+# IDE files
+.idea/
+*.iml
+.vscode/
+*.swp
+*.swo
+
+# Logs
+*.log
+logs/
+
+# Environment
+.env
+.env.local
+
+# OS files
+.DS_Store
+Thumbs.db
+# Ignore all markdown documentation files
+*.md
+
+# ...But still allow the main README to be pushed to GitHub!
+!README.md

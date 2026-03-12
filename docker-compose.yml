@@ -1,0 +1,78 @@
+# =============================================================
+# DOCKER COMPOSE CONFIGURATION
+# =============================================================
+# What is Docker Compose?
+#   It is a tool for defining and running multi-container Docker
+#   applications. Instead of running multiple 'docker run'
+#   commands manually, you define everything in this YAML file.
+#
+# How to use:
+#   - Start:  docker-compose up -d
+#   - Stop:   docker-compose down
+# =============================================================
+
+services:
+
+  # -----------------------------------------------------------
+  # POSTGRESQL: The Permanent Database (Source of Truth)
+  # -----------------------------------------------------------
+  postgres:
+    # The 'image' is the pre-built software from Docker Hub.
+    # 'alpine' versions are much smaller and faster to download.
+    image: postgres:15-alpine
+    
+    # Custom name so you can find it easily in 'docker ps'
+    container_name: urlshortener-postgres
+    
+    # Environment variables set the internal settings of the DB
+    environment:
+      POSTGRES_DB: urlshortener       # Name of the database to create
+      POSTGRES_USER: postgres         # The master username
+      POSTGRES_PASSWORD: postgres     # The master password
+      
+    # PORTS: [Host Port] : [Container Port]
+    # '5432:5432' means: Map my real computer's port 5432 
+    # to the container's internal port 5432.
+    ports:
+      - "5432:5432"
+      
+    # VOLUMES: Persists data so it isn't deleted when container stops.
+    # Map the named volume 'postgres_data' to the internal DB storage path.
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      
+    # HEALTHCHECK: Tells Docker how to check if the DB is actually ready.
+    # The app won't try to connect until this passes.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s    # Check every 10 seconds
+      timeout: 5s     # Give up after 5 seconds
+      retries: 5      # Try 5 times before failing
+      start_period: 5s # Wait 5s before starting checks
+
+  # -----------------------------------------------------------
+  # REDIS: The In-Memory Cache (Speed Layer)
+  # -----------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    container_name: urlshortener-redis
+    
+    # 6379 is the standard port for Redis.
+    ports:
+      - "6379:6379"
+      
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"] # 'ping' should return 'pong'
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+# =============================================================
+# VOLUMES DEFINITION
+# =============================================================
+# Named volumes are managed by Docker. They keep your data safe 
+# even if you delete the containers.
+# =============================================================
+volumes:
+  postgres_data:
+

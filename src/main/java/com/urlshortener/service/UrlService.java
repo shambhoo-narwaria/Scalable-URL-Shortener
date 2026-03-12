@@ -1,0 +1,294 @@
+package com.urlshortener.service;
+
+import com.urlshortener.cache.RedisService;
+import com.urlshortener.dto.AnalyticsResponse;
+import com.urlshortener.dto.ShortenRequest;
+import com.urlshortener.dto.ShortenResponse;
+import com.urlshortener.exception.ConflictException;
+import com.urlshortener.exception.NotFoundException;
+import com.urlshortener.model.UrlEntity;
+import com.urlshortener.repository.UrlRepository;
+import com.urlshortener.util.Base62Encoder;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
+
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+
+import java.net.URL;
+import java.time.LocalDateTime;
+
+/**
+ * =============================================================
+ * URL SERVICE — Business Logic Layer
+ * =============================================================
+ *
+ * WHAT IS THE SERVICE LAYER?
+ *   The service layer contains your core BUSINESS LOGIC.
+ *   It sits between the Controller (HTTP layer) and Repository (DB layer).
+ *
+ *   CONTROLLER → SERVICE → REPOSITORY → DATABASE
+ *
+ *   Controller's job: handle HTTP (parse request, return response)
+ *   Service's job:    implement business rules and workflows
+ *   Repository's job: execute database queries
+ *
+ *   WHY SEPARATE THEM?
+ *   - Business logic can be reused by multiple controllers
+ *   - Business logic can be tested independently (mock the repository)
+ *   - Each layer has a single, clear responsibility (Single Responsibility Principle)
+ *
+ * @Service
+ *   Marks this as a Spring-managed service bean.
+ *   Semantically the same as @Component, but communicates intent.
+ *
+ * @Transactional
+ *   Wraps methods in a database transaction.
+ *   If anything fails mid-method, the entire transaction ROLLS BACK.
+ *   Example: if we save to DB but Redis write fails, the DB change
+ *   is rolled back (consistency preserved).
+ *   Applied at class level = all public methods are transactional by default.
+ *
+ * =============================================================
+ */
+@Service
+@RequiredArgsConstructor
+@Slf4j
+@Transactional(readOnly = true)  // All reads are read-only by default (slight perf optimization)
+public class UrlService {
+
+    private final UrlRepository urlRepository;
+    private final RedisService redisService;
+    private final AnalyticsService analyticsService;
+    private final Base62Encoder base62Encoder;
+
+    // Reads the base-url from application.yml
+    // Default = "http://localhost:8080" if not configured
+    @Value("${app.base-url:http://localhost:8080}")
+    private String baseUrl;
+
+    // =============================================================
+    // FEATURE 1: SHORTEN URL
+    // =============================================================
+
+    /**
+     * Shorten a long URL and return the short URL.
+     *
+     * ALGORITHM STEPS:
+     *   1. Validate URL format (must be a valid URL)
+     *   2. If custom code provided → validate uniqueness
+     *   3. Save to DB (gets auto-incremented ID back)
+     *   4. If no custom code → encode ID to Base62
+     *   5. Update the short_code in DB
+     *   6. Populate Redis cache
+     *   7. Return response DTO
+     *
+     * @Transactional (readOnly = false):
+     *   We override the class-level readOnly=true because this method WRITES to DB.
+     *
+     * @param request  Validated ShortenRequest DTO from controller
+     * @return         ShortenResponse with the generated short URL
+     */
+    @Transactional
+    public ShortenResponse shortenUrl(ShortenRequest request) {
+        log.info("Shortening URL: {}", request.getUrl());
+
+        // Step 1: Validate URL format
+        validateUrlFormat(request.getUrl());
+
+        // Step 2: Determine the short code
+        String shortCode = null;
+        if (request.getCustomCode() != null && !request.getCustomCode().isBlank()) {
+            // Custom code requested — check if already taken
+            if (urlRepository.existsByShortCode(request.getCustomCode())) {
+                throw new ConflictException(
+                    "Short code '" + request.getCustomCode() + "' is already taken. Choose another."
+                );
+            }
+            shortCode = request.getCustomCode();
+            log.info("Using custom short code: {}", shortCode);
+        }
+
+        // Step 3: Calculate expiry date
+        LocalDateTime expiryDate = null;
+        if (request.getExpiryDays() != null) {
+            expiryDate = LocalDateTime.now().plusDays(request.getExpiryDays());
+            log.info("URL will expire on: {}", expiryDate);
+        }
+
+        // Step 4: Build and save the entity
+        // Since short_code is NOT NULL in DB, we must provide a temporary unique placeholder
+        // if no custom code is provided. We'll update it with the real Base62 code after we get the DB ID.
+        boolean isAutoGenerated = (shortCode == null);
+        String tempCode = isAutoGenerated ? java.util.UUID.randomUUID().toString().substring(0, 8) : shortCode;
+
+        UrlEntity entity = UrlEntity.builder()
+            .longUrl(request.getUrl())
+            .shortCode(tempCode)   
+            .expiryDate(expiryDate)
+            .build();
+
+        entity = urlRepository.save(entity);
+        // After save(), entity.getId() now has the auto-incremented value.
+
+        // Step 5: Generate Base62 code from ID (if not custom)
+        if (isAutoGenerated) {
+            shortCode = base62Encoder.encode(entity.getId());
+            entity.setShortCode(shortCode);
+            entity = urlRepository.save(entity);
+            log.info("Generated Base62 short code: {} (from ID: {})", shortCode, entity.getId());
+        }
+
+        // Step 6: Populate Redis cache (eager caching)
+        // Next redirect request for this code will be a cache HIT
+        redisService.cacheUrl(shortCode, request.getUrl());
+
+        // Step 7: Build and return response
+        String fullShortUrl = baseUrl + "/" + shortCode;
+        log.info("Successfully shortened → {}", fullShortUrl);
+
+        return ShortenResponse.builder()
+            .shortUrl(fullShortUrl)
+            .shortCode(shortCode)
+            .longUrl(request.getUrl())
+            .expiryDate(expiryDate)
+            .build();
+    }
+
+    // =============================================================
+    // FEATURE 2: RESOLVE (REDIRECT) URL
+    // =============================================================
+
+    /**
+     * Resolve a short code to its original long URL.
+     *
+     * This is the HOTTEST code path — every redirect goes through here.
+     * Target: < 10ms response time.
+     *
+     * CACHE-ASIDE FLOW:
+     *   1. Check Redis first (fast, in-memory)
+     *   2. Cache HIT  → return immediately (~1ms)
+     *   3. Cache MISS → query PostgreSQL (~5-20ms)
+     *              → check not expired
+     *              → put in Redis for next time
+     *              → trigger async click count increment
+     *              → return URL
+     *
+     * @param shortCode  The short code from the URL (e.g., "aB12x")
+     * @return           The original long URL to redirect to
+     * @throws NotFoundException if not found or expired
+     */
+    public String resolveUrl(String shortCode) {
+        log.info("Resolving short code: {}", shortCode);
+
+        // Step 1: ALWAYS increment click count asynchronously (even on cache hit)
+        // We use a separate AnalyticsService so Spring's @Async proxy intercepts the call.
+        analyticsService.incrementClickCountAsync(shortCode);
+
+        // Step 2 & 3: Try Redis cache first
+        // This is where the Cache-Aside pattern pays off!
+        // For viral URLs, 99%+ of requests will hit here and return immediately.
+        return redisService.getCachedUrl(shortCode)
+            .orElseGet(() -> {
+                // Step 3: Cache miss — query the database
+                log.info("Cache miss for '{}' — querying database", shortCode);
+
+                UrlEntity entity = urlRepository.findByShortCode(shortCode)
+                    .orElseThrow(() -> new NotFoundException(
+                        "Short URL not found: '" + shortCode + "'"
+                    ));
+
+                // Step 3a: Check if URL has expired
+                if (entity.getExpiryDate() != null &&
+                    entity.getExpiryDate().isBefore(LocalDateTime.now())) {
+
+                    // Expired! Evict from cache (if somehow still there)
+                    redisService.evict(shortCode);
+
+                    throw new NotFoundException(
+                        "This short URL expired on " + entity.getExpiryDate()
+                    );
+                }
+
+                // Step 3b: Populate cache for future requests
+                redisService.cacheUrl(shortCode, entity.getLongUrl());
+
+                // Step 3c: (Click tracking is now handled above)
+
+                return entity.getLongUrl();
+            });
+    }
+
+    // =============================================================
+    // FEATURE 4: ANALYTICS
+    // =============================================================
+
+    /**
+     * Get analytics for a short URL.
+     *
+     * @param shortCode  The short code to get analytics for
+     * @return           AnalyticsResponse with click count and metadata
+     */
+    public AnalyticsResponse getAnalytics(String shortCode) {
+        log.info("Analytics requested for: {}", shortCode);
+
+        UrlEntity entity = urlRepository.findByShortCode(shortCode)
+            .orElseThrow(() -> new NotFoundException(
+                "Short URL not found: '" + shortCode + "'"
+            ));
+
+        return AnalyticsResponse.builder()
+            .shortCode(shortCode)
+            .longUrl(entity.getLongUrl())
+            .clicks(entity.getClickCount())
+            .createdAt(entity.getCreatedAt())
+            .expiryDate(entity.getExpiryDate())
+            .build();
+    }
+
+    // =============================================================
+    // PRIVATE HELPERS
+    // =============================================================
+
+    /**
+     * Validate that the provided string is a well-formed URL.
+     *
+     * We use Java's built-in URL parser for validation.
+     * It checks:
+     *   - Protocol is present (http, https, ftp, etc.)
+     *   - Host is present
+     *   - Syntax is valid
+     *
+     * Examples:
+     *   "https://example.com"           → valid
+     *   "http://sub.domain.co.in/path"  → valid
+     *   "not-a-url"                     → INVALID → throws exception
+     *   "ftp://files.example.com"       → valid (FTP is a valid protocol)
+     *
+     * @param urlString  URL string to validate
+     * @throws IllegalArgumentException if URL is malformed
+     */
+    private void validateUrlFormat(String urlString) {
+        try {
+            // new URL() checks URL syntax
+            // .toURI() additionally validates RFC 2396 compliance
+            new URL(urlString).toURI();
+
+            // Extra check: must have http or https scheme
+            if (!urlString.startsWith("http://") && !urlString.startsWith("https://")) {
+                throw new IllegalArgumentException(
+                    "URL must start with http:// or https://"
+                );
+            }
+
+        } catch (IllegalArgumentException e) {
+            throw e; // Re-throw our own exception as-is
+        } catch (Exception e) {
+            throw new IllegalArgumentException(
+                "Invalid URL format: '" + urlString + "'. Must be a valid HTTP/HTTPS URL."
+            );
+        }
+    }
+}

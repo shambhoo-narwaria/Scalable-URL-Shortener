@@ -1,0 +1,244 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  =============================================================
+  WHAT IS pom.xml AND HOW DOES THIS APP "INSTALL"?
+  =============================================================
+  If you are coming from JavaScript/NodeJS, this file is the 
+  exact equivalent of `package.json`.
+  
+  HOW IT WORKS (NODE.JS vs JAVA):
+    - Node uses `npm` (Node Package Manager) -> `package.json`
+    - Java uses `Maven` -> `pom.xml` (Project Object Model)
+    
+  WHERE IS SPRING BOOT INSTALLED?
+    You DO NOT install Spring Boot on your computer like you 
+    install NodeJS. Spring Boot is simply a "library" (a bunch of 
+    pre-written code).
+    
+    When you run `mvn spring-boot:run` in your terminal:
+      1. Maven reads this pom.xml file.
+      2. It looks at the `<dependencies>` block below.
+      3. It connects to the internet (Maven Central - the npmjs of Java).
+      4. It automatically downloads all the Spring Boot `.jar` files into 
+         a hidden folder on your PC (`~/.m2/repository`).
+      5. It compiles your code and runs the server.
+      
+    Because of this, ANYONE can download your project on ANY computer, 
+    and Maven handles downloading everything automatically with zero setup!
+  =============================================================
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
+         https://maven.apache.org/xsd/maven-4.0.0.xsd">
+
+    <modelVersion>4.0.0</modelVersion>
+
+    <!--
+      PARENT: Spring Boot Starter Parent
+      By inheriting from this, we get:
+        - Sensible default configs for all Spring libraries
+        - Dependency version management (no version conflicts)
+        - Plugin configurations for building
+    -->
+    <parent>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-parent</artifactId>
+        <version>3.2.3</version>
+        <relativePath/>
+    </parent>
+
+    <!--
+      PROJECT IDENTITY
+      groupId  = your organization (like a package prefix)
+      artifactId = your project name
+      version  = your project version
+    -->
+    <groupId>com.urlshortener</groupId>
+    <artifactId>url-shortener</artifactId>
+    <version>1.0.0</version>
+    <name>url-shortener</name>
+    <description>Production-Style Scalable URL Shortener with Redis Caching</description>
+    <packaging>jar</packaging>
+
+    <!-- Java 17 LTS — Long Term Support, stable and widely used -->
+    <properties>
+        <java.version>17</java.version>
+    </properties>
+
+    <dependencies>
+
+        <!--
+          =====================================================
+          1. SPRING WEB
+          =====================================================
+          Gives you:
+            - REST API support (@RestController, @GetMapping etc.)
+            - Embedded Tomcat server (no separate server needed)
+            - HTTP request/response handling
+          =====================================================
+        -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+
+        <!--
+          =====================================================
+          2. SPRING DATA JPA
+          =====================================================
+          JPA = Java Persistence API
+          Gives you:
+            - ORM (Object Relational Mapping) via Hibernate
+            - @Entity, @Repository, @Column annotations
+            - Auto-generated SQL queries from method names
+            - No raw SQL needed for basic operations
+          =====================================================
+        -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-jpa</artifactId>
+        </dependency>
+
+        <!--
+          =====================================================
+          3. SPRING DATA REDIS
+          =====================================================
+          Gives you:
+            - RedisTemplate for read/write operations
+            - Easy Redis connection management
+            - Key-value store operations (get, set, expire)
+          =====================================================
+        -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-redis</artifactId>
+        </dependency>
+
+        <!--
+          =====================================================
+          4. VALIDATION
+          =====================================================
+          For validating incoming requests:
+            - @NotNull, @NotBlank, @Size, @Pattern
+            - @Valid in controller triggers validation
+            - Returns 400 Bad Request on violation
+          =====================================================
+        -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-validation</artifactId>
+        </dependency>
+
+        <!--
+          =====================================================
+          5. SPRING ACTUATOR
+          =====================================================
+          Gives you built-in production-ready endpoints:
+            - GET /actuator/health  → app health status
+            - GET /actuator/metrics → performance metrics
+            - GET /actuator/info    → app info
+          FREE observability, no extra code needed.
+          =====================================================
+        -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+
+        <!--
+          =====================================================
+          6. POSTGRESQL DRIVER
+          =====================================================
+          JDBC driver that lets Java talk to PostgreSQL.
+          Spring Data JPA uses this under the hood.
+          scope=runtime means it's only needed at runtime,
+          not during compilation.
+          =====================================================
+        -->
+        <dependency>
+            <groupId>org.postgresql</groupId>
+            <artifactId>postgresql</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+
+        <!--
+          =====================================================
+          7. LOMBOK
+          =====================================================
+          Reduces boilerplate Java code with annotations:
+            - @Data       → generates getters, setters, toString, equals
+            - @Builder    → builder pattern
+            - @NoArgsConstructor / @AllArgsConstructor → constructors
+            - @RequiredArgsConstructor → constructor for final fields
+            - @Slf4j      → logger instance
+          =====================================================
+        -->
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <version>1.18.36</version>
+            <optional>true</optional>
+        </dependency>
+
+        <!--
+          =====================================================
+          8. SPRING BOOT TEST (Testing)
+          =====================================================
+          Gives you:
+            - JUnit 5 for writing test cases
+            - Mockito for mocking dependencies
+            - MockMvc for testing REST endpoints
+            - @SpringBootTest for integration tests
+          scope=test means only used during testing
+          =====================================================
+        -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+
+        <!--
+          =====================================================
+          9. SWAGGER / OPENAPI (Documentation)
+          =====================================================
+          Automatically reads your REST Controllers and generates
+          a beautiful, interactive webpage where anyone can test
+          your API right from their browser!
+          
+          Access it at: http://localhost:8080/swagger-ui.html
+          =====================================================
+        -->
+        <dependency>
+            <groupId>org.springdoc</groupId>
+            <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+            <version>2.3.0</version>
+        </dependency>
+
+    </dependencies>
+
+    <build>
+        <plugins>
+            <!--
+              Spring Boot Maven Plugin:
+              - Packages your app into a single executable JAR
+              - Run with: mvn spring-boot:run
+              - Build with: mvn package → creates target/url-shortener-1.0.0.jar
+            -->
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+                <configuration>
+                    <excludes>
+                        <exclude>
+                            <groupId>org.projectlombok</groupId>
+                            <artifactId>lombok</artifactId>
+                        </exclude>
+                    </excludes>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+
+</project>

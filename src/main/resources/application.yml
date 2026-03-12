@@ -1,0 +1,98 @@
+spring:
+
+  # =============================================================
+  # DATASOURCE — Tells Spring how to connect to PostgreSQL
+  # =============================================================
+  # JDBC URL format:  jdbc:postgresql://HOST:PORT/DATABASE_NAME
+  # When running locally via docker-compose:
+  #   HOST = localhost
+  #   PORT = 5432 (PostgreSQL default)
+  #   DB   = urlshortener
+  # =============================================================
+  datasource:
+    url: jdbc:postgresql://localhost:5432/urlshortener
+    username: postgres
+    password: postgres
+    driver-class-name: org.postgresql.Driver
+
+    # HikariCP = Connection Pool (built into Spring Boot)
+    # A connection pool keeps DB connections open and reuses them.
+    # Why? Opening a new DB connection costs ~100ms each time.
+    # Pool keeps N connections ready → instant reuse.
+    hikari:
+      pool-name: UrlShortenerPool
+      maximum-pool-size: 10      # Max simultaneous DB connections
+      minimum-idle: 2            # Keep at least 2 connections warm
+      connection-timeout: 30000  # Wait 30s before timing out
+
+  # =============================================================
+  # JPA — Java Persistence API configuration
+  # =============================================================
+  jpa:
+    # ddl-auto options:
+    #   create      → drops and recreates tables on every start (dev only!)
+    #   create-drop → like create, but drops on shutdown
+    #   update      → adds missing columns/tables, never deletes (good for dev)
+    #   validate    → only checks schema matches, never changes
+    #   none        → do nothing (production best practice — use Flyway/Liquibase)
+    hibernate:
+      ddl-auto: update
+
+    show-sql: true       # Prints SQL queries to console (useful for learning)
+    
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: true   # Pretty-prints the SQL (easier to read)
+
+  # =============================================================
+  # REDIS — Cache configuration
+  # =============================================================
+  # When running locally via docker-compose:
+  #   HOST = localhost
+  #   PORT = 6379 (Redis default)
+  # Redis has no auth by default in local dev
+  # =============================================================
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      # password:        # Uncomment if Redis requires a password
+      timeout: 2000ms    # Connection timeout — fail fast if Redis is down
+
+# =============================================================
+# SERVER — HTTP Server configuration
+# =============================================================
+server:
+  port: 8080
+
+# =============================================================
+# ACTUATOR — Expose health/metrics endpoints
+# =============================================================
+# By default, only /actuator/health is exposed over HTTP.
+# We expose more for development visibility.
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: always   # Shows Redis + DB health separately
+
+# =============================================================
+# CUSTOM APP PROPERTIES
+# =============================================================
+# These are our own configuration values, accessed in code via:
+#   @Value("${app.base-url}")
+#   private String baseUrl;
+# =============================================================
+app:
+  base-url: http://localhost:8080
+  # Rate limiting config
+  rate-limit:
+    max-requests: 100     # Max requests allowed per window
+    window-minutes: 1     # Time window in minutes
+  # Default cache TTL for URL entries in Redis
+  cache:
+    url-ttl-hours: 24     # How long to keep URL in Redis cache

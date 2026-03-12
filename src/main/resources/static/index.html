@@ -1,0 +1,566 @@
+<!DOCTYPE html>
+<!--
+  =============================================================
+  FRONTEND ARCHITECTURE — The User Interface Layer
+  =============================================================
+
+  WHAT IS THIS FILE?
+    This single HTML file contains the entire User Interface (UI)
+    for the NexLink URL Shortener. It is a "Single Page Application"
+    (SPA) built with Vanilla HTML, CSS, and JavaScript.
+
+  HOW IT CONNECTS TO THE BACKEND:
+    The frontend (this file) communicates with the backend (Java Spring Boot)
+    using HTTP requests via the JavaScript `fetch()` API.
+
+    1. URL Shortening:
+       - User clicks "Shrink URL"
+       - JS sends POST /api/shorten with the long URL data
+       - Java backend saves to DB, returns the short code
+       - JS displays the result to the user
+
+    2. Analytics:
+       - User enters code & clicks "View Stats"
+       - JS sends GET /api/analytics/{shortCode}
+       - Java backend queries DB, returns click count
+       - JS updates the UI with the numbers
+
+  WHY VANILLA (No React/Angular/Vue)?
+    For a single-page utility tool like a URL shortener, adding a
+    heavy framework (like React) is overkill. Pure CSS and JS
+    keep the application lightning-fast and the file size incredibly
+    small. This is called the "Vanilla Web Stack."
+
+  KEY SECTIONS IN THIS FILE:
+    - <head>   : Imports fonts (Google Fonts), icons (FontAwesome), & CSS styling.
+    - <style>  : Contains all the CSS for layout, glassmorphism, & animations.
+    - <body>   : The actual HTML structure (forms, buttons, inputs).
+    - <script> : The JavaScript logic that makes the forms interactive
+                 and handles communication with your Spring Boot API.
+
+  =============================================================
+-->
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NexLink | Premium URL Shortener</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Outfit', sans-serif;
+        }
+
+        body {
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 2rem;
+            position: relative;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 600px;
+            z-index: 10;
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 2rem;
+        }
+
+        h1 {
+            font-size: 2.5rem;
+            font-weight: 700;
+            margin-bottom: 0.5rem;
+        }
+
+        header p {
+            font-size: 1rem;
+        }
+
+        .panel {
+            border: 1px solid;
+            border-radius: 8px;
+            padding: 2.5rem;
+            margin-bottom: 2rem;
+        }
+
+        .tabs {
+            display: flex;
+            margin-bottom: 2rem;
+            border-bottom: 2px solid;
+        }
+
+        .tab {
+            flex: 1;
+            text-align: center;
+            padding: 0.75rem 1rem;
+            cursor: pointer;
+            font-weight: 600;
+            transition: color 0.2s;
+            border-bottom: 2px solid transparent;
+            margin-bottom: -2px;
+        }
+
+        .tab.active {
+            border-bottom-color: currentColor;
+        }
+
+        .form-group {
+            margin-bottom: 1.5rem;
+            position: relative;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-size: 0.9rem;
+            font-weight: 600;
+        }
+
+        input {
+            width: 100%;
+            padding: 0.75rem 0.75rem 0.75rem 2.5rem;
+            border: 1px solid;
+            border-radius: 6px;
+            font-size: 1rem;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+
+        .input-icon {
+            position: absolute;
+            left: 0.75rem;
+            top: 2.45rem;
+            font-size: 1rem;
+        }
+
+        .advanced-options {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1rem;
+        }
+
+        @media (max-width: 480px) {
+            .advanced-options {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        button {
+            width: 100%;
+            padding: 0.85rem;
+            border: 1px solid;
+            border-radius: 6px;
+            font-size: 1.05rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background-color 0.2s;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        button:active {
+            transform: translateY(1px);
+        }
+
+        .result-box {
+            display: none;
+            margin-top: 1.5rem;
+            padding: 1rem;
+            border: 1px solid;
+            border-radius: 6px;
+        }
+
+        .result-title {
+            font-size: 0.9rem;
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .short-url-container {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            border: 1px solid;
+            padding: 0.5rem 0.75rem;
+            border-radius: 6px;
+            margin-top: 0.5rem;
+        }
+
+        .short-url {
+            flex: 1;
+            text-decoration: none;
+            font-weight: 600;
+            word-break: break-all;
+        }
+
+        .short-url:hover {
+            text-decoration: underline;
+        }
+
+        .copy-btn {
+            width: auto;
+            padding: 0.5rem;
+            border: none;
+            transition: color 0.2s;
+        }
+
+        .analytics-card {
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+            border: 1px solid;
+            padding: 1rem;
+            border-radius: 6px;
+            margin-top: 1rem;
+        }
+
+        .stat-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding-bottom: 0.5rem;
+            border-bottom: 1px solid;
+        }
+
+        .stat-row:last-child {
+            border-bottom: none;
+            padding-bottom: 0;
+        }
+
+        .stat-label {
+            font-weight: 500;
+            font-size: 0.9rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .stat-value {
+            font-weight: 700;
+        }
+
+        .clicks-badge {
+            padding: 0.25rem 0.5rem;
+            border-radius: 4px;
+            font-size: 0.9rem;
+            border: 1px solid;
+        }
+
+        .loader {
+            display: none;
+            width: 18px;
+            height: 18px;
+            border: 2px solid;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        .hidden {
+            display: none !important;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>NexLink</h1>
+            <p>Enterprise API URL Shortener</p>
+        </header>
+
+        <div class="panel">
+            <div class="tabs">
+                <div class="tab active" onclick="switchTab('shorten')">Shorten URL</div>
+                <div class="tab" onclick="switchTab('analytics')">Analytics</div>
+            </div>
+
+            <!-- SHORTEN VIEW -->
+            <div id="shorten-view">
+                <form id="shorten-form">
+                    <div class="form-group">
+                        <label for="longUrl">Destination URL</label>
+                        <i class="fa-solid fa-link input-icon"></i>
+                        <input type="url" id="longUrl" placeholder="https://example.com/very/long/url" required>
+                    </div>
+
+                    <div class="advanced-options">
+                        <div class="form-group">
+                            <label for="customCode">Custom Alias (Optional)</label>
+                            <i class="fa-solid fa-wand-magic-sparkles input-icon"></i>
+                            <input type="text" id="customCode" placeholder="e.g. my-promo" pattern="[a-zA-Z0-9_-]+">
+                        </div>
+                        <div class="form-group">
+                            <label for="expiryDays">Expiry Days (Optional)</label>
+                            <i class="fa-regular fa-clock input-icon"></i>
+                            <input type="number" id="expiryDays" placeholder="0 or leave blank for ~10y" min="0" max="3650">
+                        </div>
+                    </div>
+
+                    <button type="submit" id="shortenBtn">
+                        <span class="btn-text">Shrink URL</span>
+                        <div class="loader" id="shortenLoader"></div>
+                    </button>
+                </form>
+
+                <div id="shortenResult" class="result-box">
+                    <div class="result-title success-title" id="shortenResultTitle">
+                        <i class="fa-solid fa-circle-check"></i> URL Shortened Successfully!
+                    </div>
+                    <div class="short-url-container hidden" id="shortUrlContainer">
+                        <a href="#" target="_blank" class="short-url" id="shortUrlText">https://localhost:8080/xyz</a>
+                        <button class="copy-btn" onclick="copyToClipboard('shortUrlText')" title="Copy to clipboard">
+                            <i class="fa-regular fa-copy"></i>
+                        </button>
+                    </div>
+                    <div id="shortenErrorMessage" class="hidden" style="color: var(--error); margin-top:0.5rem; font-size: 0.95rem;"></div>
+                </div>
+            </div>
+
+            <!-- ANALYTICS VIEW -->
+            <div id="analytics-view" class="hidden">
+                <form id="analytics-form">
+                    <div class="form-group">
+                        <label for="shortCode">Short Code</label>
+                        <i class="fa-solid fa-chart-line input-icon"></i>
+                        <input type="text" id="shortCode" placeholder="Enter short code without domain (e.g. aB12x)" required>
+                    </div>
+
+                    <button type="submit" id="analyticsBtn">
+                        <span class="btn-text">View Stats</span>
+                        <div class="loader" id="analyticsLoader"></div>
+                    </button>
+                </form>
+
+                <div id="analyticsResult" class="result-box">
+                    <div class="result-title success-title" id="analyticsResultTitle">
+                        <i class="fa-solid fa-chart-pie"></i> Real-time Analytics
+                    </div>
+                    <div id="analyticsErrorMessage" class="hidden" style="color: var(--error); margin-top:0.5rem; font-size: 0.95rem;"></div>
+                    
+                    <div class="analytics-card hidden" id="analyticsDataContainer">
+                        <div class="stat-row">
+                            <span class="stat-label"><i class="fa-solid fa-hand-pointer"></i> Total Clicks</span>
+                            <span class="stat-value clicks-badge" id="statClicks">0</span>
+                        </div>
+                        <div class="stat-row">
+                            <span class="stat-label"><i class="fa-solid fa-link"></i> Original URL</span>
+                            <a href="#" target="_blank" class="stat-value short-url" id="statOriginalUrl" style="font-size: 0.9rem; font-weight: 500;">...</a>
+                        </div>
+                        <div class="stat-row">
+                            <span class="stat-label"><i class="fa-solid fa-calendar-check"></i> Created At</span>
+                            <span class="stat-value" id="statCreated" style="font-size: 0.9rem; font-weight: 400; color: var(--text-secondary)">...</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // API Base URL (Assumes running on same domain, or modify if cross-origin)
+        const API_BASE = window.location.origin;
+
+        function switchTab(tab) {
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.getElementById('shorten-view').classList.add('hidden');
+            document.getElementById('analytics-view').classList.add('hidden');
+            
+            // hide results when switching
+            document.getElementById('shortenResult').style.display = 'none';
+            document.getElementById('analyticsResult').style.display = 'none';
+
+            if (tab === 'shorten') {
+                document.querySelectorAll('.tab')[0].classList.add('active');
+                document.getElementById('shorten-view').classList.remove('hidden');
+            } else {
+                document.querySelectorAll('.tab')[1].classList.add('active');
+                document.getElementById('analytics-view').classList.remove('hidden');
+            }
+        }
+
+        function setLoading(btnId, loaderId, isLoading, defaultText) {
+            const btn = document.getElementById(btnId);
+            const loader = document.getElementById(loaderId);
+            const textSpan = btn.querySelector('.btn-text');
+            
+            if (isLoading) {
+                btn.disabled = true;
+                textSpan.style.display = 'none';
+                loader.style.display = 'block';
+            } else {
+                btn.disabled = false;
+                textSpan.style.display = 'block';
+                textSpan.innerText = defaultText;
+                loader.style.display = 'none';
+            }
+        }
+
+        async function copyToClipboard(elementId) {
+            const copyText = document.getElementById(elementId).innerText;
+            try {
+                await navigator.clipboard.writeText(copyText);
+                const btn = event.currentTarget;
+                const icon = btn.querySelector('i');
+                icon.className = 'fa-solid fa-check';
+                icon.style.color = 'var(--success)';
+                setTimeout(() => {
+                    icon.className = 'fa-regular fa-copy';
+                    icon.style.color = 'var(--text-secondary)';
+                }, 2000);
+            } catch (err) {
+                console.error('Failed to copy text: ', err);
+            }
+        }
+
+        function showResult(boxId, isSuccess, titleHtml, messageOrDataCallback) {
+            const box = document.getElementById(boxId);
+            const titleEl = box.querySelector('.result-title');
+            
+            box.style.display = 'block';
+            box.className = 'result-box ' + (isSuccess ? '' : 'error');
+            
+            titleEl.innerHTML = titleHtml;
+            titleEl.className = 'result-title ' + (isSuccess ? 'success-title' : 'error-title');
+            
+            messageOrDataCallback();
+        }
+
+        // =============================================================
+        // JS HOW-TO: The "Shorten URL" Logic
+        // =============================================================
+        // 1. We listen for the 'submit' event on the shorten form.
+        // 2. We grab the user input from the DOM (Document Object Model).
+        // 3. We construct a Javascript Object (payload) that aligns with
+        //    the `ShortenRequest.java` DTO in our Spring Boot backend.
+        // 4. We use the browser's built-in `fetch` API to send a POST
+        //    request with JSON data to `/api/shorten`.
+        // 5. If the response is good (201 Created), we show success and
+        //    the new URL. If bad, we show an error.
+        document.getElementById('shorten-form').addEventListener('submit', async (e) => {
+            e.preventDefault(); // Prevents the browser from reloading the page
+            
+            const longUrl = document.getElementById('longUrl').value;
+            const customCode = document.getElementById('customCode').value.trim();
+            const expiryDaysInput = document.getElementById('expiryDays').value;
+            
+            const payload = { url: longUrl };
+            if (customCode) payload.customCode = customCode;
+            if (expiryDaysInput) payload.expiryDays = parseInt(expiryDaysInput);
+
+            setLoading('shortenBtn', 'shortenLoader', true);
+            
+            try {
+                // Sending the HTTP POST request to UrlController.java
+                const response = await fetch(`${API_BASE}/api/shorten`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok || response.status === 201) {
+                    showResult('shortenResult', true, '<i class="fa-solid fa-circle-check"></i> URL Shortened Successfully!', () => {
+                        document.getElementById('shortUrlContainer').classList.remove('hidden');
+                        document.getElementById('shortenErrorMessage').classList.add('hidden');
+                        
+                        const fullShortUrl = `${API_BASE}/${data.shortCode}`;
+                        const linkEl = document.getElementById('shortUrlText');
+                        linkEl.innerText = fullShortUrl;
+                        linkEl.href = fullShortUrl;
+                        
+                        // Clear inputs
+                        document.getElementById('longUrl').value = '';
+                        document.getElementById('customCode').value = '';
+                        document.getElementById('expiryDays').value = '';
+                    });
+                } else {
+                    throw new Error(data.message || 'Validation error or custom code already exists');
+                }
+            } catch (error) {
+                showResult('shortenResult', false, '<i class="fa-solid fa-circle-exclamation"></i> Oops, an error occurred', () => {
+                    document.getElementById('shortUrlContainer').classList.add('hidden');
+                    const errEl = document.getElementById('shortenErrorMessage');
+                    errEl.classList.remove('hidden');
+                    errEl.innerText = error.message;
+                });
+            } finally {
+                setLoading('shortenBtn', 'shortenLoader', false, 'Shrink URL');
+            }
+        });
+
+        // =============================================================
+        // JS HOW-TO: The "Analytics" Logic
+        // =============================================================
+        // 1. Listen for the 'submit' event on the analytics form.
+        // 2. We use `fetch` to send a GET request to `/api/analytics/{shortCode}`.
+        // 3. We read the returned JSON which maps to our `AnalyticsResponse` DTO.
+        // 4. We then dynamically update the DOM to inject the server data
+        //    (clicks, created date, and original URL) into our HTML elements.
+        document.getElementById('analytics-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const shortCode = document.getElementById('shortCode').value.trim();
+            if (!shortCode) return;
+
+            setLoading('analyticsBtn', 'analyticsLoader', true);
+            
+            try {
+                // Sending the HTTP GET request to UrlController.java
+                const response = await fetch(`${API_BASE}/api/analytics/${shortCode}`);
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    showResult('analyticsResult', true, '<i class="fa-solid fa-chart-pie"></i> Real-time Analytics', () => {
+                        document.getElementById('analyticsErrorMessage').classList.add('hidden');
+                        document.getElementById('analyticsDataContainer').classList.remove('hidden');
+                        
+                        // Updating the DOM with data from the backend
+                        document.getElementById('statClicks').innerText = data.clicks;
+                        
+                        const aEl = document.getElementById('statOriginalUrl');
+                        aEl.innerText = data.longUrl.substring(0, 40) + (data.longUrl.length > 40 ? '...' : '');
+                        aEl.href = data.longUrl;
+                        
+                        document.getElementById('statCreated').innerText = new Date(data.createdAt).toLocaleString();
+                    });
+                } else {
+                    const errorData = await response.json().catch(() => ({}));
+                    throw new Error(errorData.message || 'Short code not found or analytics unavailable.');
+                }
+            } catch (error) {
+                showResult('analyticsResult', false, '<i class="fa-solid fa-circle-exclamation"></i> Analytics Error', () => {
+                    document.getElementById('analyticsDataContainer').classList.add('hidden');
+                    const errEl = document.getElementById('analyticsErrorMessage');
+                    errEl.classList.remove('hidden');
+                    errEl.innerText = error.message;
+                });
+            } finally {
+                setLoading('analyticsBtn', 'analyticsLoader', false, 'View Stats');
+            }
+        });
+    </script>
+</body>
+</html>
